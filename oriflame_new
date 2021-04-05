@@ -1,0 +1,326 @@
+var VpaidVideoPlayer = function() {
+
+    this.slot_ = null;
+    this.videoSlot_ = null;
+    this.eventsCallbacks_ = {};
+    this.attributes_ = {
+        'companions' : '',
+        'desiredBitrate' : 256,
+        'duration' : 30,
+        'expanded' : false,
+        'height' : 0,
+        'icons' : '',
+        'linear' : true,
+        'remainingTime' : 10,
+        'skippableState' : false,
+        'viewMode' : '500',
+        'width' : 0,
+        'volume' : 1.0
+    };
+
+    this.quartileEvents_ = [
+        {event: 'AdVideoStart', value: 0},
+        {event: 'AdVideoFirstQuartile', value: 25},
+        {event: 'AdVideoMidpoint', value: 50},
+        {event: 'AdVideoThirdQuartile', value: 75},
+        {event: 'AdVideoComplete', value: 100}
+    ];
+    this.lastQuartileIndex_ = 0;
+    this.parameters_ = {};
+};
+
+var _srcAd;
+
+
+/**
+ * VPAID defined init ad, initializes all attributes in the ad.  The ad will
+ * not start until startAd is called.
+ *
+ * @param {number} width The ad width.
+ * @param {number} height The ad heigth.
+ * @param {string} viewMode The ad view mode.
+ * @param {number} desiredBitrate The desired bitrate.
+ * @param {Object} creativeData Data associated with the creative.
+ * @param {Object} environmentVars Variables associated with the creative like
+ *     the slot and video slot.
+ */
+VpaidVideoPlayer.prototype.initAd = function(
+    width,
+    height,
+    viewMode,
+    desiredBitrate,
+    creativeData,
+    environmentVars) {
+
+    // slot and videoSlot are passed as part of the environmentVars
+    this.attributes_['width'] = width;
+    this.attributes_['height'] = height;
+    this.attributes_['viewMode'] = viewMode;
+    this.attributes_['desiredBitrate'] = desiredBitrate;
+    this.slot_ = environmentVars.slot;
+    this.videoSlot_ = environmentVars.videoSlot;
+
+    // Parse the incoming parameters.
+    this.parameters_ = JSON.parse(creativeData['AdParameters']);
+
+
+    _srcAd = this.parameters_.mediaFiles[0].uri
+
+
+    this.log('initAd ' + width + 'x' + height +
+        ' ' + viewMode + ' ' + desiredBitrate);
+    // this.renderSlot_();
+    this.updateVideoSlot_(_srcAd);
+    this.videoSlot_.addEventListener(
+        'timeupdate',
+        this.timeUpdateHandler_.bind(this),
+        false);
+    this.videoSlot_.addEventListener(
+        'ended',
+        this.stopAd.bind(this),
+        false);
+    this.callEvent_('AdLoaded');
+};
+
+
+
+VpaidVideoPlayer.prototype.overlayOnClick_ = function() {
+    this.callEvent_('AdClickThru');
+};
+VpaidVideoPlayer.prototype.timeUpdateHandler_ = function() {
+    if (this.lastQuartileIndex_ >= this.quartileEvents_.length) {
+        return;
+    }
+    var percentPlayed =
+        this.videoSlot_.currentTime * 100.0 / this.videoSlot_.duration;
+    if (percentPlayed >= this.quartileEvents_[this.lastQuartileIndex_].value) {
+        var lastQuartileEvent = this.quartileEvents_[this.lastQuartileIndex_].event;
+        this.eventsCallbacks_[lastQuartileEvent]();
+        this.lastQuartileIndex_ += 1;
+    }
+};
+VpaidVideoPlayer.prototype.updateVideoSlot_ = function(val) {
+    if (this.videoSlot_ == null) {
+        let video = document.createElement('video');
+        video.setAttribute('class', 'mi-video-js')
+
+        this.videoSlot_ = video
+        this.log('Warning: No video element passed to ad, creating element.');
+        this.slot_.appendChild(this.videoSlot_);
+
+    }
+    this.updateVideoPlayerSize_();
+    var foundSource = true;
+    this.videoSlot_.setAttribute('src', val);
+    document.body.setAttribute('class', 'mbody')
+
+
+    // foundSource = false;
+    // var videos = this.parameters_.videos || [];
+    // for (var i = 0; i < videos.length; i++) {
+    //     // Choose the first video with a supported mimetype.
+    //     if (this.videoSlot_.canPlayType(videos[i].mimetype) != '') {
+    //         this.videoSlot_.setAttribute('src', videos[i].url);
+    //         foundSource = true;
+    //         break;
+    //     }
+    // }
+
+
+    if (!foundSource) {
+        // Unable to find a source video.
+        this.callEvent_('AdError');
+    }
+};
+VpaidVideoPlayer.prototype.updateVideoPlayerSize_ = function() {
+    this.videoSlot_.setAttribute('width', this.attributes_['width']);
+    this.videoSlot_.setAttribute('height', this.attributes_['height']);
+};
+VpaidVideoPlayer.prototype.handshakeVersion = function(version) {
+    return ('2.0');
+};
+VpaidVideoPlayer.prototype.startAd = function() {
+    this.log('Starting ad');
+    this.videoSlot_.play();
+
+    console.log(this.videoSlot_)
+
+
+    let style = document.createElement('style'),
+        skip = document.createElement('div');
+
+    const img = new Image()
+    img.src = 'https://fc03f831-04e2-43e9-8293-b6218a0acc19.selcdn.net/player/logo.jpg'
+    img.setAttribute('class', 'logo')
+
+    skip.setAttribute('class', 'myskip')
+    skip.innerHTML = 'Skip <span>AD</span>'
+    skip.addEventListener('click', () => {
+        this.callEvent_('AdSkipped');
+        this.stopAd()
+    },false);
+
+    var box = document.createElement('div')
+    box.className = 'box'
+    box.innerHTML = '<div>Будь всегда красивой вместе с <span>Oriflame</span> <p>Узнать подробнее</p></div>'
+
+    // style.innerHTML = '.myskip {background: #484848; border-top-left-radius: 6px; border-bottom-left-radius: 6px; padding: 5px 8px; color: #fff; border: 1px solid #fff; position: absolute; z-index: 1000; cursor: pointer; bottom: 90px; right: -1px; font-family: sans-serif; width: auto; height: auto; font-weight: 600;} .myskip span {color: #c1272d;} .logo { position: absolute; top: 0; left: 0; width: 115px;}'
+    style.innerHTML = '.box {z-index: 99999;position: absolute;top: 0;left: 0;padding: 0;background: #ff02dd;color: #fff;height: 100%;width: 100%;display: flex;justify-content: center;align-items: center;font-size: 30px;text-align: center;font-family: sans-serif;} .box span {display: block; font-size: 36px} .box p {margin: 0;margin-top: 20px;font-size: 16px; padding: 8px 14px;background: #fff;color: #ff02dd;border-radius: 5px;display: inline-block;font-family: sans-serif;text-transform: uppercase; cursor: pointer}'
+
+    this.slot_.appendChild(style);
+
+    const self = this
+    setTimeout(() => {
+        self.slot_.appendChild(box)
+        self.videoSlot_.pause();
+    }, 0)
+
+    setTimeout(() => {
+        console.log(box.style)
+        box.style.display = 'none'
+        self.videoSlot_.play();
+        // this.videoSlot_.play();
+    }, 4000)
+
+    //
+    // this.slot_.appendChild(img);
+    // this.slot_.appendChild(skip);
+
+    this.callEvent_('AdStarted');
+};
+VpaidVideoPlayer.prototype.stopAd = function() {
+    this.log('Stopping ad');
+    // Calling AdStopped immediately terminates the ad. Setting a timeout allows
+    // events to go through.
+    var callback = this.callEvent_.bind(this);
+    setTimeout(callback, 75, ['AdStopped']);
+};
+VpaidVideoPlayer.prototype.setAdVolume = function(value) {
+    this.attributes_['volume'] = value;
+    this.log('setAdVolume ' + value);
+    this.callEvent_('AdVolumeChange');
+};
+VpaidVideoPlayer.prototype.getAdVolume = function() {
+    this.log('getAdVolume');
+    return this.attributes_['volume'];
+};
+VpaidVideoPlayer.prototype.renderSlot_ = function() {
+    var slotExists = this.slot_ && this.slot_.tagName === 'DIV';
+    if (!slotExists) {
+        this.slot_ = document.createElement('div');
+        if (!document.body) {
+            document.body = /**@type {HTMLDocument}*/ document.createElement('body');
+        }
+        document.body.appendChild(this.slot_);
+    }
+};
+/**
+ * @param {number} width The new width.
+ * @param {number} height A new height.
+ * @param {string} viewMode A new view mode.
+ */
+VpaidVideoPlayer.prototype.resizeAd = function(width, height, viewMode) {
+    this.log('resizeAd ' + width + 'x' + height + ' ' + viewMode);
+    this.attributes_['width'] = width;
+    this.attributes_['height'] = height;
+    this.attributes_['viewMode'] = viewMode;
+    this.updateVideoPlayerSize_();
+    this.callEvent_('AdSizeChange');
+};
+VpaidVideoPlayer.prototype.pauseAd = function() {
+    this.log('pauseAd');
+    this.videoSlot_.pause();
+    this.callEvent_('AdPaused');
+};
+VpaidVideoPlayer.prototype.resumeAd = function() {
+    this.log('resumeAd');
+    this.videoSlot_.play();
+    this.callEvent_('AdResumed');
+};
+VpaidVideoPlayer.prototype.expandAd = function() {
+    this.log('expandAd');
+    this.attributes_['expanded'] = true;
+    if (elem.requestFullscreen) {
+        elem.requestFullscreen();
+    }
+    this.callEvent_('AdExpanded');
+};
+VpaidVideoPlayer.prototype.getAdExpanded = function() {
+    this.log('getAdExpanded');
+    return this.attributes_['expanded'];
+};
+VpaidVideoPlayer.prototype.getAdSkippableState = function() {
+    this.log('getAdSkippableState');
+    return this.attributes_['skippableState'];
+};
+VpaidVideoPlayer.prototype.collapseAd = function() {
+    this.log('collapseAd');
+    this.attributes_['expanded'] = false;
+};
+VpaidVideoPlayer.prototype.skipAd = function() {
+    this.log('skipAd');
+
+    var skippableState = this.attributes_['skippableState'];
+    if (skippableState) {
+        this.callEvent_('AdSkipped');
+    }
+};
+/**
+ * Registers a callback for an event.
+ * @param {Function} aCallback The callback function.
+ * @param {string} eventName The callback type.
+ * @param {Object} aContext The context for the callback.
+ */
+
+VpaidVideoPlayer.prototype.subscribe = function(
+    aCallback,
+    eventName,
+    aContext) {
+    this.log('Subscribe ' + aCallback);
+    var callBack = aCallback.bind(aContext);
+    this.eventsCallbacks_[eventName] = callBack;
+};
+VpaidVideoPlayer.prototype.unsubscribe = function(eventName) {
+    this.log('unsubscribe ' + eventName);
+    this.eventsCallbacks_[eventName] = null;
+};
+VpaidVideoPlayer.prototype.getAdWidth = function() {
+    return this.attributes_['width'];
+};
+VpaidVideoPlayer.prototype.getAdHeight = function() {
+    return this.attributes_['height'];
+};
+VpaidVideoPlayer.prototype.getAdRemainingTime = function() {
+    return this.attributes_['remainingTime'];
+};
+VpaidVideoPlayer.prototype.getAdDuration = function() {
+    return this.attributes_['duration'];
+};
+VpaidVideoPlayer.prototype.getAdCompanions = function() {
+    return this.attributes_['companions'];
+};
+VpaidVideoPlayer.prototype.getAdIcons = function() {
+    return this.attributes_['icons'];
+};
+VpaidVideoPlayer.prototype.getAdLinear = function() {
+    return this.attributes_['linear'];
+};
+VpaidVideoPlayer.prototype.log = function(message) {
+};
+VpaidVideoPlayer.prototype.callEvent_ = function(eventType) {
+    if (eventType in this.eventsCallbacks_) {
+        this.eventsCallbacks_[eventType]();
+    }
+};
+VpaidVideoPlayer.prototype.muteButtonOnClick_ = function() {
+    if (this.attributes_['volume'] == 0) {
+        this.attributes_['volume'] = 1.0;
+    } else {
+        this.attributes_['volume'] = 0.0;
+    }
+    this.callEvent_('AdVolumeChange');
+};
+
+var getVPAIDAd = function() {
+    return new VpaidVideoPlayer();
+};
